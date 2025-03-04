@@ -1,6 +1,5 @@
 import kaggle
 import os
-
 if not os.listdir("./csv/dataset_A/"):
     kaggle.api.dataset_download_files("pradhyumna2021/branch-prediction", path="./csv/dataset_A/", unzip=True)
 else:
