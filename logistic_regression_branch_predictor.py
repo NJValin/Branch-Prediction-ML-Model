@@ -1,5 +1,6 @@
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.decomposition import PCA
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.preprocessing import StandardScaler
@@ -29,6 +30,7 @@ def preprocess(dataset_type="IO4", test=False, balance=False)->tuple:
 
     """
     scaler = StandardScaler()
+    pca = PCA(n_components=32)
     unprocessed_path = f'./csv/dataset_B/{dataset_type}.csv'
     processed_path = f'./csv/processed_B/processed_{dataset_type}.csv'
     if not os.path.isfile(processed_path):
@@ -41,8 +43,8 @@ def preprocess(dataset_type="IO4", test=False, balance=False)->tuple:
         
     X = processed_df.drop(columns=['taken', 'PC'])
     y = processed_df['taken'].values
-    #X.loc[:, X.columns.str.startswith('GA_TABLE_')] = X.loc[:, X.columns.str.startswith('GA_TABLE_')].astype(float) / 255 # normalize each entry of each 8-bit GA_Table 
-    X = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
+    X = scaler.fit_transform(X)
+    X = pca.fit_transform(X)
     print(f"Done Processing {dataset_type}")
     return X, y
 
@@ -57,33 +59,21 @@ def plot_confusion_matrix(y_test, y_pred):
     sns.heatmap(cm_df, annot=True, cmap="Blues", fmt="d")
     plt.title("Confusion Matrix")
 
-def plot_feature_importances(X, y):
-    importances = model.feature_importances_
-    features = X.columns
-    plt.figure(figsize=(10, 5))
-    plt.barh(features, importances, color="green")
-    plt.xlabel("Importance Score")
-    plt.title("Feature Importance (Random Forest)")
 
 if __name__=='__main__':
-    X_train1, y_train1 = preprocess("I04", test=False, balance=True)
-    X_train2, y_train2 = preprocess("S02", test=False, balance=True)
-    X_train3, y_train3 = preprocess("MM05", test=False, balance=True)
-    X_train4, y_train4 = preprocess("MM03", test=False, balance=True)
-    X_train5, y_train5 = preprocess("INT03", test=False, balance=True)
+    X_train1, y_train1 = preprocess("I04", test=False, balance=False)
+    X_train2, y_train2 = preprocess("S02", test=False, balance=False)
+    X_train3, y_train3 = preprocess("MM05", test=False, balance=False)
+    X_train4, y_train4 = preprocess("MM03", test=False, balance=False)
+    X_train5, y_train5 = preprocess("INT03", test=False, balance=False)
 
-    X_train = pd.concat([X_train1, X_train2, X_train3, X_train4, X_train5]).reset_index(drop=True)
+    X_train = np.concatenate((X_train1, X_train2, X_train3, X_train4, X_train5))
     y_train = np.concatenate((y_train1, y_train2, y_train3, y_train4, y_train5))
     
 
     X_test, y_test = preprocess("S04", test=True, balance=False)
 
-    classifier = RandomForestClassifier(
-        n_estimators=200,          # More trees for better learning  
-        max_depth=None,              # Prevents deep trees that overfit  
-        bootstrap=True,            # Helps with data diversity _estimators=200,
-        n_jobs=-1
-    )
+    classifier = LogisticRegression(penalty="l1", solver="saga", C=0.1, class_weight="balanced", n_jobs=-1)
 
     print("Fitting!\n----------------------------")
     model = classifier.fit(X_train, y_train)
@@ -93,7 +83,6 @@ if __name__=='__main__':
 
     print("Accuracy:", accuracy_score(y_test, y_predicted))
     print("\nClassification Report:\n", classification_report(y_test, y_predicted))
-    plot_feature_importances(X_train, y_train)
     plot_confusion_matrix(y_test, y_predicted)
 
     plt.show()
