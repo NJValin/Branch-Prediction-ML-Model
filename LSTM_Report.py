@@ -51,6 +51,9 @@ model = Sequential([
 # Compile model
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
+# Display model summary
+model.summary()
+
 # Train model with 15 epochs
 history = model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_test, y_test))
 
