@@ -31,7 +31,7 @@ def preprocess(dataset_type="IO4", test=False, balance=False)->tuple:
 
     """
     #scaler = StandardScaler()
-    #scaler = MinMaxScaler()
+    scaler = MinMaxScaler()
 
     unprocessed_path = f'./csv/dataset_B/{dataset_type}.csv'
     processed_path = f'./csv/processed_B/processed_{dataset_type}.csv'
@@ -45,8 +45,8 @@ def preprocess(dataset_type="IO4", test=False, balance=False)->tuple:
         
     X = processed_df.drop(columns=['taken', 'PC'])
     y = processed_df['taken'].values
-    #X = scaler.fit_transform(X)
-    X = X.to_numpy()
+    X = scaler.fit_transform(X)
+    #X = X.to_numpy()
     X_tensor = torch.tensor(X, dtype=torch.float32)
     y_tensor = torch.tensor(y, dtype=torch.float32)
     print(f"Done Processing {dataset_type}")
@@ -73,28 +73,35 @@ class IterativeDataset(Dataset):
 class NeuralNetwork(nn.Module):
     def __init__(self, input_dim) -> None:
         super().__init__()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(input_dim, 100),
-            nn.BatchNorm1d(100),  # Normalize activations
-            nn.Dropout(p=0.5),
+        self.convolution_layers = nn.Sequential(
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=(3, 1), padding=(1, 0)),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.Linear(100, 100),
-            nn.BatchNorm1d(100),  # Normalize activations
-            nn.Dropout(p=0.5),
+            nn.MaxPool2d(kernel_size=(2, 1)),
+            
+            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 1), padding=(1, 0)),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.Linear(100, 64),
-            nn.BatchNorm1d(64),  # Normalize activations
-            nn.Dropout(p=0.5),
+            nn.MaxPool2d(kernel_size=(2,1)),
+
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=(3, 1), padding=(1, 0)),
+            nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.BatchNorm1d(64),  # Normalize activations
-            nn.Dropout(p=0.5),
+            nn.MaxPool2d(kernel_size=(2,1))
+        )
+        self.fully_connected = nn.Sequential(
+            nn.Linear(128*(input_dim//(1<<3)), 64),
+            nn.Dropout(p=0.4),
             nn.ReLU(),
             nn.Linear(64, 1)
         )
+        
 
     def forward(self, X):
-        logits = self.linear_relu_stack(X)
+        X = X.view(X.shape[0], 1, X.shape[1], 1)
+        X = self.convolution_layers(X)
+        X = torch.flatten(X, start_dim=1)
+        logits = self.fully_connected(X)
         return logits
 
 def train(dataloader, model, loss_func, optimizer, operating_point= 0.5, scaler=None):
@@ -193,13 +200,13 @@ if __name__=='__main__':
         pin_memory = False
 
     batch_size = 512
-    learning_rate = 1e-4
+    learning_rate = 5e-5
 
 
-    X_train1, y_train1 = preprocess("I04", test=False, balance=True)
-    X_train2, y_train2 = preprocess("S02", test=False, balance=True)
-    X_train4, y_train4 = preprocess("MM03", test=False, balance=True)
-    X_train3, y_train3 = preprocess("MM05", test=False, balance=True)
+    X_train1, y_train1 = preprocess("I04", test=False, balance=False)
+    X_train2, y_train2 = preprocess("S02", test=False, balance=False)
+    X_train3, y_train3 = preprocess("MM05", test=False, balance=False)
+    X_train4, y_train4 = preprocess("MM03", test=False, balance=False)
 
     X_train = np.concatenate((X_train1, X_train2, X_train3, X_train4))
 
@@ -242,20 +249,18 @@ if __name__=='__main__':
 
     ic(model)
 
-    #pos_weights = torch.tensor([(num_ones/num_zeros)], device=device)
-    loss_func = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.AdamW(model.parameters(),
-                                 lr=learning_rate,
-                                 weight_decay=1e-3) # L2 regularization 
+    pos_weights = torch.tensor([(num_zeros/num_ones)/2], device=device)
+    loss_func = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
+    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, nesterov=True)
     
     # Do initial training
     init_train_accuracy = []
     init_valid_accuracy = []
-    epochs = 30
+    epochs = 10
     for i in range(epochs):
         print(f"Epoch {i+1}\n--------------------------")
-        train_accuracy, _ = train(train_dataloader, model, loss_func, optimizer, 0.5, scaler)
-        valid_accuracy, _ = validate(validate_dataloader, model, loss_func, 0.5)
+        train_accuracy, _ = train(train_dataloader, model, loss_func, optimizer, 0.75, scaler)
+        valid_accuracy, _ = validate(validate_dataloader, model, loss_func, 0.75)
         init_train_accuracy.append(train_accuracy)
         init_valid_accuracy.append(valid_accuracy)
 
@@ -263,3 +268,4 @@ if __name__=='__main__':
     print("TESTING\n---------------------------")
     test(test_dataloader, model, init_train_accuracy, init_valid_accuracy, epochs)
     plt.show()
+
